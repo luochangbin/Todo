@@ -1,0 +1,43 @@
+{
+  "change": "AR-001-desktop-memo",
+  "archived_at": "2026-09-09T20:39:17",
+  "modules": [
+    "todo-desktop"
+  ],
+  "affected_modules": [
+    "todo-desktop"
+  ],
+  "added": {
+    "todo-desktop": [
+      "事项分组与拖动排序",
+      "免安装发布",
+      "勾选完成",
+      "外观和快捷键设置",
+      "本地持久化与历史过滤",
+      "桌面窗口停靠与弹出"
+    ]
+  },
+  "modified": {
+    "todo-desktop": []
+  },
+  "design_added": {
+    "todo-desktop": [
+      "WPF 窗口与视觉交互",
+      "应用生命周期与错误处理",
+      "技术边界与项目结构",
+      "持久化格式和一致性",
+      "测试策略",
+      "设置与全局快捷键",
+      "领域模型与不变量"
+    ]
+  },
+  "design_modified": {},
+  "before_sha256": {
+    "spec": "57196eb95ef7fc1f2cff6985c86ec1f428f7bd468a21d4eef4629ea13477e8ab",
+    "design": "87ff044753d6a2c1c0953fa5c2ecf851cebbdf18e850ff42ad16331e9ae619c7"
+  },
+  "after_sha256": {
+    "spec": "02cdf4cb6c9591dd5a3b865b7b1e862dc82793493ef66b8c5d6eb4e7f1e5fdbc",
+    "design": "bdb9a73896108dc0bc024fba02e2bdbebd187d89090645bc5a511f7e935e74e5"
+  }
+}

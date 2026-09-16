@@ -1,0 +1,5 @@
+**/bin/
+**/obj/
+.codex/
+.superpowers/
+publish/

@@ -1,0 +1,18 @@
+ar: AR-001
+tier: full
+phase: archive
+modules: [todo-desktop]
+verify_result: pass
+verify_failures: 0
+archive_confirmation: confirmed
+spec_base_hash: 57196eb95ef7fc1f2cff6985c86ec1f428f7bd468a21d4eef4629ea13477e8ab
+design_base_hash: 87ff044753d6a2c1c0953fa5c2ecf851cebbdf18e850ff42ad16331e9ae619c7
+worker_executor: null
+worker_session_id: null
+archived: true
+
+
+
+
+
+

@@ -1,0 +1,13 @@
+language: zh-CN
+reasoning_mode: oracle-cli
+reasoning_model: gpt-5.6-sol
+reasoning_effort: extended
+# reasoning_model: gpt-5.6-sol
+# reasoning_effort: extended
+default_executor: opencode
+
+modules:
+  - id: todo-desktop
+    label: 桌面备忘录
+    spec_section: "## 模块：桌面备忘录（todo-desktop）"
+    design_section: "## 模块：桌面备忘录（todo-desktop）"

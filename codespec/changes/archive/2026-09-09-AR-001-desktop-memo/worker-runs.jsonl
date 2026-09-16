@@ -1,0 +1,1 @@
+{"ar":"AR-001","batch":"all","executor":"opencode","agent":null,"session":"ses_f7a0887a3ffewzFXxQrT7XGWZx","timestamp":"2026-09-09T11:40:35.3097761Z","worker_exit_code":0,"codespec_check_ok":true,"usage":{"cache_status":"reported","input_tokens":17232,"cached_tokens":33920,"cache_write_tokens":0,"output_tokens":586}}
