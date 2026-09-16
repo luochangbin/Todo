@@ -7,7 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <!-- 图标直接用仓库根目录的 todo.ico；托盘图标复用同一个 exe 图标 -->
+    <!-- 与 GitHub Release 的 tag 保持一致，便于用文件属性确认版本 -->
+    <Version>1.0.1</Version>
     <ApplicationIcon>..\..\todo.ico</ApplicationIcon>
   </PropertyGroup>
 
