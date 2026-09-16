@@ -85,7 +85,7 @@ public sealed record AppSettings(
 
 根对象包含 `SchemaVersion: 1`、`Todos` 和 `Settings`。保存流程是“完整内存快照 -> 同目录临时文件 -> Flush(true) -> 原子替换正式文件”。任何保存失败都保留内存状态并返回错误，不以空状态覆盖正式文件；损坏 JSON 读取失败时保留原文件，使用默认运行时状态并展示错误提示。
 
-Repository 通过 `SemaphoreSlim` 串行化保存，避免排序保存和勾选保存并发时旧快照覆盖新快照。每次保存传入完整快照，不保存“当前可见列表”，因此超出显示范围的已完成事项也始终落盘。
+Repository 通过 `SemaphoreSlim` 串行化保存，避免排序保存和勾选保存并发时旧快照覆盖新快照。每次保存传入完整快照，不保存“当前可见列表”，因此超出显示范围的已完成事项也始终落盘。序列化留在调用线程（要读快照），耗时的写盘 + `flushToDisk` fsync + `File.Replace` 原子替换挪到线程池，并 `ConfigureAwait(false)`：这段原先全在调用线程（UI 侧即 UI 线程）上同步执行——`await _gate.WaitAsync()` 在闸门空闲时同步完成、不会让出线程——一次 fsync 就能让界面卡住二十多毫秒；`ConfigureAwait(false)` 同时避免在 UI 线程上同步等待保存的调用方死锁（续体要回 UI 线程、UI 线程却在等它）。
 
 未来版本 `SchemaVersion > 1` 不覆盖原文件；缺失可选字段使用默认设置。`CompletedRange` 以字符串写入，缺失时按旧字段兼容：若同一文件存在历史字段 `ShowHistory`，`true` 映射为 `All`、`false` 映射为 `Week`（旧 `ShowHistory=true` 曾表示展示全部，直接映射为 Week 会让原本可见的旧事项凭空消失）；两者都缺失时使用默认值 `Week`。事项 ID、完成状态、同组 Order、LastActiveAt、置顶标记与置顶顺序、背景色、字体颜色、不透明度、窗口置顶、快捷键、完成事项显示范围、窗口位置、停靠信息和自启动标记都属于持久化数据。
 

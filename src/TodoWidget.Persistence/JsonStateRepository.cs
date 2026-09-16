@@ -86,24 +86,34 @@ public sealed class JsonStateRepository
 
             Directory.CreateDirectory(_dataDirectory);
 
+            // 序列化留在调用线程（要读快照），真正耗时的写盘 + fsync + 原子替换挪到线程池。
+            // 这段原先全在调用线程（对 UI 来说是 UI 线程）上同步执行：await _gate.WaitAsync()
+            // 在闸门空闲时同步完成、不会让出线程，于是一次 fsync 就能把界面卡住几十毫秒。
             var json = BuildDocument(snapshot).ToJsonString(JsonOptions);
             tempPath = FilePath + ".tmp";
-            using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
-            using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
+            var writePath = tempPath;
+            var targetPath = FilePath;
+            // 库层不强制回到调用方的上下文：否则在 UI 线程上同步等待保存的调用方会死锁
+            // （续体要回 UI 线程，UI 线程却在等它）。UI 侧的 await 仍在自己的上下文里恢复。
+            await Task.Run(() =>
             {
-                writer.Write(json);
-                writer.Flush();
-                stream.Flush(flushToDisk: true);
-            }
+                using (var stream = new FileStream(writePath, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
+                {
+                    writer.Write(json);
+                    writer.Flush();
+                    stream.Flush(flushToDisk: true);
+                }
 
-            if (File.Exists(FilePath))
-            {
-                File.Replace(tempPath, FilePath, destinationBackupFileName: null);
-            }
-            else
-            {
-                File.Move(tempPath, FilePath);
-            }
+                if (File.Exists(targetPath))
+                {
+                    File.Replace(writePath, targetPath, destinationBackupFileName: null);
+                }
+                else
+                {
+                    File.Move(writePath, targetPath);
+                }
+            }).ConfigureAwait(false);
             tempPath = null;
             return new StateSaveResult(true, null);
         }

@@ -20,7 +20,10 @@ public sealed class AppState
 
     public async Task<string?> SaveAsync()
     {
-        var result = await Repository.SaveAsync(new StateSnapshot(Todos.Items, Settings));
+        // 快照必须在调用线程（通常是 UI 线程）上取，之后再让出到线程池做落盘；
+        // ConfigureAwait(false) 避免同步等待保存的调用方死锁。
+        var snapshot = new StateSnapshot(Todos.Items, Settings);
+        var result = await Repository.SaveAsync(snapshot).ConfigureAwait(false);
         return result.Success ? null : result.Error;
     }
 }
