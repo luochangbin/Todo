@@ -1,5 +1,8 @@
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Unicode;
 using TodoWidget.Core;
 
 namespace TodoWidget.Persistence;
@@ -8,6 +11,13 @@ public sealed class JsonStateRepository
 {
     public const int SupportedSchemaVersion = 1;
     private const string FileName = "state.json";
+
+    // 默认编码器会把所有非 ASCII 转义成 \uXXXX（文件可读性差）。放宽到全部 Unicode 范围，
+    // 让中文等字符原样写入，便于人工查看与编辑；HTML 敏感字符（< > & " '）仍保持转义。
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
+    };
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly string _dataDirectory;
@@ -76,7 +86,7 @@ public sealed class JsonStateRepository
 
             Directory.CreateDirectory(_dataDirectory);
 
-            var json = BuildDocument(snapshot).ToJsonString();
+            var json = BuildDocument(snapshot).ToJsonString(JsonOptions);
             tempPath = FilePath + ".tmp";
             using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
             using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))

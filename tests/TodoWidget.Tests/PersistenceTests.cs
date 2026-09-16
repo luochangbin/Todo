@@ -203,6 +203,29 @@ public static class PersistenceTests
             Test.True(!AppSettings.IsNoBackground(null));
             Test.Eq(AppSettings.Default.BackgroundColor, "#1B1C20", "默认仍是具体颜色");
         }),
+        ("保存的文件里中文原样可读（不再转义成 \\uXXXX）", () =>
+        {
+            using var dir = TempDir();
+            var repo = new JsonStateRepository(dir.Path);
+            var items = new[]
+            {
+                new TodoItem(Guid.NewGuid(), "买菜 · 未完成", false, 0, Base),
+                new TodoItem(Guid.NewGuid(), "已完成【一项】", true, 0, Base),
+            };
+            Test.True(repo.SaveAsync(new StateSnapshot(items, AppSettings.Default)).GetAwaiter().GetResult().Success);
+
+            string text = File.ReadAllText(repo.FilePath);
+            Test.True(text.Contains("买菜"), "中文应以原字符写入，便于人工查看与编辑");
+            Test.True(text.Contains("已完成【一项】"));
+            Test.Assert(!text.Contains("\\u4e70", StringComparison.OrdinalIgnoreCase), "不应再出现中文的 \\uXXXX 转义");
+            Test.True(text.Contains("#1B1C20"), "设置项同样可读");
+
+            var load = repo.LoadAsync().GetAwaiter().GetResult();
+            Test.True(load.Success, $"应能读回: {load.Error}");
+            Test.Eq(load.Items[0].Text, "买菜 · 未完成", "放宽编码不得影响往返保真");
+            Test.Eq(load.Items[1].Text, "已完成【一项】");
+            Test.Eq(load.Items[1].IsCompleted, true);
+        }),
         ("并发保存串行化：结果始终等于某次完整快照", () =>
         {
             using var dir = TempDir();

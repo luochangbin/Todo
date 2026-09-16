@@ -58,6 +58,10 @@ dotnet publish src/TodoWidget.Desktop/TodoWidget.Desktop.csproj -c Release -r wi
 %LOCALAPPDATA%\TodoWidget\state.json
 ```
 
+即 `C:\Users\<用户名>\AppData\Local\TodoWidget\state.json`（当前用户的本地目录，不随账号漫游，也不需要管理员权限）。
+
+文件是 UTF-8 的 JSON，中文以**原字符**写入（不做 `\uXXXX` 转义），可以直接查看和编辑；**编辑请在应用关闭时进行**，否则应用保存时会把内存中的完整状态覆盖回去。
+
 以「完整内存快照 → 同目录临时文件 → Flush → 原子替换」的方式写入，保存失败不会用空数据覆盖原文件；JSON 损坏时保留原文件并用默认状态启动，同时在窗口内提示。
 
 ## 开发
