@@ -143,4 +143,14 @@ public static class AppHotkeyRules
         if (string.IsNullOrWhiteSpace(toggleHotkey)) return null;
         return HotkeyParser.TryParse(toggleHotkey, out _, out var error) ? null : error;
     }
+
+    /// <summary>
+    /// 按下全局快捷键时应"唤出并激活"还是"最小化"。
+    /// 已隐藏/最小化 → 唤出；显示中但不在前台 → 先唤到最前。
+    /// 只有它已经是当前窗口时才最小化，否则"把别的程序切到前面"之后要按两次快捷键才看得见窗口。
+    /// 例外：设置窗口打开时焦点在对话框上（主窗口必然不是活动窗口），此时按键收起主窗口更合理；
+    /// 置顶且可见时窗口本来就压在别人上面，也不必"先唤前"。
+    /// </summary>
+    public static bool ShouldRaiseOnHotkey(bool hidden, bool isActive, bool modalOpen, bool topmost)
+        => hidden || (!isActive && !modalOpen && !topmost);
 }

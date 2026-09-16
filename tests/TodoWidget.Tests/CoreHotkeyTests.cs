@@ -89,6 +89,25 @@ public static class CoreHotkeyTests
             Test.True(!string.IsNullOrEmpty(err));
             Test.True(!string.IsNullOrEmpty(AppHotkeyRules.ValidateToggleHotkey("Q")), "缺少修饰键应被拒绝");
         }),
+        ("快捷键切换：显示中但不在前台时先唤出（回归：被盖住时曾要按两次）", () =>
+        {
+            // 已隐藏/最小化：不论焦点如何都唤出
+            Test.True(AppHotkeyRules.ShouldRaiseOnHotkey(hidden: true, isActive: false, modalOpen: false, topmost: false));
+            Test.True(AppHotkeyRules.ShouldRaiseOnHotkey(hidden: true, isActive: true, modalOpen: false, topmost: false));
+
+            // 显示中但被别的程序盖住：应唤到最前，而不是先收起（否则用户要连按两次才看得见）
+            Test.True(AppHotkeyRules.ShouldRaiseOnHotkey(hidden: false, isActive: false, modalOpen: false, topmost: false),
+                "不在前台时应唤出并激活");
+
+            // 已是当前窗口：收起
+            Test.True(!AppHotkeyRules.ShouldRaiseOnHotkey(hidden: false, isActive: true, modalOpen: false, topmost: false));
+
+            // 例外：设置窗口打开时焦点必然不在主窗口，按键收起主窗口更合理
+            Test.True(!AppHotkeyRules.ShouldRaiseOnHotkey(hidden: false, isActive: false, modalOpen: true, topmost: false));
+
+            // 例外：置顶且可见时窗口本来就压在别人上面，按键直接收起
+            Test.True(!AppHotkeyRules.ShouldRaiseOnHotkey(hidden: false, isActive: false, modalOpen: false, topmost: true));
+        }),
         ("默认快捷键是 Alt+Q 且可解析", () =>
         {
             Test.Eq(AppSettings.Default.ToggleHotkey, "Alt+Q");

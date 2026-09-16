@@ -1029,10 +1029,11 @@ public partial class MainWindow : Window
         }
     }
 
-    // 单一快捷键：隐藏/最小化时唤出并激活，正常显示时最小化。
+    // 单一快捷键：隐藏/最小化时唤出并激活，显示中但不在前台时先唤到最前，已是当前窗口才最小化。
     private void OnToggleHotkey()
     {
-        if (_dock.IsCollapsed || WindowState == WindowState.Minimized)
+        bool hidden = _dock.IsCollapsed || WindowState == WindowState.Minimized;
+        if (AppHotkeyRules.ShouldRaiseOnHotkey(hidden, IsActive, _modalOpen, Topmost))
         {
             RestoreHiddenOrNormal();
             Show();
