@@ -17,8 +17,10 @@ dotnet run --project src/TodoWidget.Desktop/TodoWidget.Desktop.csproj
 免安装发布（自包含单文件，用户解压后直接运行，不需要装 .NET Runtime）：
 
 ```powershell
-dotnet publish src/TodoWidget.Desktop/TodoWidget.Desktop.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o publish/win-x64
+dotnet publish src/TodoWidget.Desktop/TodoWidget.Desktop.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
 ```
+
+产物目录已由 csproj 的 `PublishDir` 固定为 `publish/win-x64`，不必再传 `-o`；漏传也不会把新产物写到别处、留下旧 exe 被误启动。
 
 然后运行 `publish/win-x64/TodoWidget.Desktop.exe`。开发需要 .NET SDK 10（`net10.0-windows`）。
 

@@ -8,7 +8,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <!-- 与 GitHub Release 的 tag 保持一致，便于用文件属性确认版本 -->
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <ApplicationIcon>..\..\todo.ico</ApplicationIcon>
   </PropertyGroup>
 
@@ -25,6 +25,9 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <!-- 只保留英文卫星资源，去掉 20 多个语种的 *.resources.dll -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- 固定发布输出（路径相对项目目录）。漏写 -o 时旧行为会把新产物写到
+         bin/Release/.../publish/，而 publish/win-x64/ 下的旧 exe 仍在，容易被误启动旧版本。 -->
+    <PublishDir>..\..\publish\win-x64\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>

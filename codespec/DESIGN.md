@@ -7,7 +7,7 @@
 
 ### Design: 技术边界与项目结构
 
-交付物采用单进程 Windows WPF（Windows Presentation Foundation）桌面应用，目标框架固定为 `net10.0-windows`，首个发布 RID 固定为 `win-x64`。本机已验证存在 .NET SDK 10.0.400 和 Windows Desktop Runtime 10.0.11；发布使用 self-contained 单文件方式，用户解压后直接运行，不需要安装运行时。
+交付物采用单进程 Windows WPF（Windows Presentation Foundation）桌面应用，目标框架固定为 `net10.0-windows`，首个发布 RID 固定为 `win-x64`。本机已验证存在 .NET SDK 10.0.400 和 Windows Desktop Runtime 10.0.11；发布使用 self-contained 单文件方式，用户解压后直接运行，不需要安装运行时。发布输出目录由 `TodoWidget.Desktop.csproj` 的 `PublishDir` 固定为仓库根下的 `publish/win-x64/`：漏写 `-o` 时旧行为会把新产物写到 `bin/Release/.../publish/`，而 `publish/win-x64/` 下的旧 exe 仍在，容易被误启动成旧版本（曾真实发生过一次）。
 
 项目结构：
 
