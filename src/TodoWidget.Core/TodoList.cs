@@ -88,30 +88,32 @@ public sealed class TodoList
     {
         int index = FindIndex(id);
         var item = _items[index];
-
-        int total = _items.Count;
-        int pinnedCount = PinnedCount;
-        int incompleteCount = _items.Count(i => !i.IsCompleted);
-        int clamped;
-        if (item.IsCompleted)
-        {
-            clamped = Math.Clamp(targetIndex, incompleteCount, total - 1);
-        }
-        else if (item.IsPinned)
-        {
-            // 置顶项只在置顶子区内重排
-            clamped = Math.Clamp(targetIndex, 0, pinnedCount - 1);
-        }
-        else
-        {
-            // 普通项只在普通子区内重排
-            clamped = Math.Clamp(targetIndex, pinnedCount, incompleteCount - 1);
-        }
+        int clamped = ClampMoveTarget(id, targetIndex);
         if (clamped == index) return;
 
         _items.RemoveAt(index);
         _items.Insert(clamped, item);
         NormalizeOrders();
+    }
+
+    // 拖动预览与 Move 共用同一套子区夹取规则，保证预览落点与最终落点一致
+    public int ClampMoveTarget(Guid id, int targetIndex)
+    {
+        var item = _items[FindIndex(id)];
+        int incompleteCount = _items.Count(i => !i.IsCompleted);
+
+        if (item.IsCompleted)
+        {
+            // 已完成项只在已完成子区内重排
+            return Math.Clamp(targetIndex, incompleteCount, _items.Count - 1);
+        }
+        if (item.IsPinned)
+        {
+            // 置顶项只在置顶子区内重排
+            return Math.Clamp(targetIndex, 0, PinnedCount - 1);
+        }
+        // 普通项只在普通子区内重排
+        return Math.Clamp(targetIndex, PinnedCount, incompleteCount - 1);
     }
 
     public void Delete(Guid id)

@@ -5,6 +5,8 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using TodoWidget.Core;
 using TodoWidget.Desktop.Interop;
@@ -27,11 +29,18 @@ public partial class MainWindow : Window
     private Guid? _dragItemId;
     private Point _dragOrigin;
     private bool _dragArmed;
+    private bool _dragActive;
+    private FrameworkElement? _dragHost;
+    private double _dragStartTop;
+    private double _dragTargetTop;
+    private double _dragGrabOffset;
+    private double _dragRowHeight;
+    private int _dragSlot;
+    private readonly List<RowSlot> _dragSlots = new();
     private Guid? _pendingDeleteId;
     private bool _draftActive;
     private TextBox? _draftBox;
     private bool _modalOpen;
-    private Border? _dragIndicator;
     private bool _resizeActive;
     private bool _resizeLeft;
     private bool _resizeRight;
@@ -39,6 +48,16 @@ public partial class MainWindow : Window
     private bool _resizeBottom;
     private Point _resizeCursorStart;
     private Rect _resizeStartBounds;
+
+    // 拖动排序时每一行的原始位置、自身高度与"到下一行"的步进（步进含外边距，
+    // 因为 WPF 的 ActualHeight 不含 Margin，直接用它累加会每行少算间距）。
+    private sealed record RowSlot(
+        Guid Id,
+        FrameworkElement Host,
+        TranslateTransform Shift,
+        double Top,
+        double Height,
+        double Advance);
 
     public MainWindow(AppState state)
     {
@@ -50,6 +69,11 @@ public partial class MainWindow : Window
 
         _dock = new DockManager(this, OnPlacementChanged);
         MouseEnter += OnWindowMouseEnter;
+        LostMouseCapture += (_, _) =>
+        {
+            // 拖动中被系统夺走捕获（Alt+Tab、窗口隐藏等）时也要收尾，避免状态卡住
+            if (_dragActive) FinishRowDrag(true);
+        };
         MouseLeave += OnWindowMouseLeave;
         Closing += MainWindow_Closing;
 
@@ -344,17 +368,6 @@ public partial class MainWindow : Window
             text.SetResourceReference(TextBlock.ForegroundProperty, "Todo.TextMutedBrush");
             text.TextDecorations = TextDecorations.Strikethrough;
         }
-        text.MouseLeftButtonDown += (_, e) =>
-        {
-            if (e.ClickCount == 2)
-            {
-                BeginEdit(item.Id);
-            }
-            else
-            {
-                ArmRowDrag(host, item.Id, e);
-            }
-        };
         Grid.SetColumn(text, 1);
         row.Children.Add(text);
 
@@ -385,25 +398,20 @@ public partial class MainWindow : Window
             if (IsNonDragSource(e.OriginalSource))
             {
                 _dragArmed = false;
+                _dragItemId = null;
                 return;
             }
             if (_editingId is not null) return;
-            ArmRowDrag(host, item.Id, e);
-        };
-        host.PreviewMouseMove += (_, e) =>
-        {
-            if (_dragArmed && _dragItemId == item.Id && e.LeftButton == MouseButtonState.Pressed)
+            if (e.ClickCount >= 2)
             {
-                var pos = e.GetPosition(this);
-                if (Math.Abs(pos.X - _dragOrigin.X) > DragStartPixels
-                    || Math.Abs(pos.Y - _dragOrigin.Y) > DragStartPixels)
-                {
-                    _dragArmed = false;
-                    var data = new DataObject("TodoWidget.ItemId", item.Id);
-                    DragDrop.DoDragDrop(host, data, DragDropEffects.Move);
-                    Render();
-                }
+                // 双击整行进入编辑：文本、行内空白都算，无需精确点在文字上
+                _dragArmed = false;
+                _dragItemId = null;
+                BeginEdit(item.Id);
+                e.Handled = true;
+                return;
             }
+            ArmRowDrag(item.Id, e);
         };
 
         _rowHosts.Add(host);
@@ -421,12 +429,12 @@ public partial class MainWindow : Window
         return false;
     }
 
-    private void ArmRowDrag(FrameworkElement row, Guid id, MouseButtonEventArgs e)
+    private void ArmRowDrag(Guid id, MouseButtonEventArgs e)
     {
-        if (_dock.IsCollapsed || _editingId is not null) return;
+        if (_dock.IsCollapsed || _editingId is not null || _dragActive) return;
         _dragItemId = id;
         _dragArmed = true;
-        _dragOrigin = e.GetPosition(this);
+        _dragOrigin = e.GetPosition(RowsPanel);
     }
 
     // ---------- 行内操作 ----------
@@ -648,79 +656,186 @@ public partial class MainWindow : Window
         ErrorBar.Visibility = Visibility.Collapsed;
     }
 
-    // ---------- 拖放排序 ----------
+    // ---------- 拖动排序 ----------
+    //
+    // 不用 OLE DragDrop.DoDragDrop：它让第一击进入模态拖放循环、会把双击序列吃掉，
+    // 也拿不到"被拖行跟手、其余行让位"的连续动画。这里改用手动鼠标捕获：
+    // 被拖行跟随光标，其余行按目标顺序用 TranslateTransform 平滑滑动，松手才提交。
 
-    private void RowsPanel_PreviewDragOver(object sender, DragEventArgs e)
+    private const int DragLiftZIndex = 100;
+    private const double ReorderMilliseconds = 140;
+
+    // 超过阈值才算拖动：单击（含双击的第一击）绝不进入拖动
+    private void UpdateRowDragArming(MouseEventArgs e)
     {
-        if (!e.Data.GetDataPresent("TodoWidget.ItemId"))
+        if (!_dragArmed || _dragItemId is null) return;
+        if (e.LeftButton != MouseButtonState.Pressed)
         {
-            e.Effects = DragDropEffects.None;
-            e.Handled = true;
+            _dragArmed = false;
+            _dragItemId = null;
             return;
         }
-        e.Effects = DragDropEffects.Move;
-        e.Handled = true;
 
-        var slot = SlotAt(e.GetPosition(RowsPanel));
-        ShowInsertIndicator(slot);
+        var current = e.GetPosition(RowsPanel);
+        if (Math.Abs(current.X - _dragOrigin.X) <= DragStartPixels
+            && Math.Abs(current.Y - _dragOrigin.Y) <= DragStartPixels) return;
+
+        StartRowDrag(_dragItemId.Value, current);
     }
 
-    private void RowsPanel_DragLeave(object sender, DragEventArgs e)
+    private void StartRowDrag(Guid id, Point current)
     {
-        HideInsertIndicator();
-    }
-
-    private void RowsPanel_Drop(object sender, DragEventArgs e)
-    {
-        HideInsertIndicator();
-        if (e.Data.GetData("TodoWidget.ItemId") is not Guid id) return;
-        int slot = SlotAt(e.GetPosition(RowsPanel));
-        ApplyDrop(id, slot);
-        e.Handled = true;
-    }
-
-    private int SlotAt(Point p)
-    {
-        double y = p.Y;
-        int slot = 0;
-        foreach (var host in _rowHosts)
+        var host = _rowHosts.FirstOrDefault(h => (Guid)h.Tag! == id);
+        if (host is null)
         {
-            var pos = host.TranslatePoint(new Point(0, host.ActualHeight / 2), RowsPanel);
-            if (y > pos.Y) slot++;
-            else break;
+            _dragArmed = false;
+            _dragItemId = null;
+            return;
         }
-        return slot;
+
+        _dragArmed = false;
+        _dragActive = true;
+        _dragHost = host;
+        _dragItemId = id;
+        _dragRowHeight = host.ActualHeight;
+
+        _dragSlots.Clear();
+        foreach (var h in _rowHosts)
+        {
+            var shift = new TranslateTransform();
+            h.RenderTransform = shift;
+            double top = h.TranslatePoint(new Point(0, 0), RowsPanel).Y;
+            _dragSlots.Add(new RowSlot((Guid)h.Tag!, h, shift, top, h.ActualHeight, h.ActualHeight));
+        }
+
+        // 步进用相邻两行的实际间距（含外边距），最后一行沿用前面的间距
+        for (int i = 0; i + 1 < _dragSlots.Count; i++)
+        {
+            var s = _dragSlots[i];
+            _dragSlots[i] = s with { Advance = _dragSlots[i + 1].Top - s.Top };
+        }
+        if (_dragSlots.Count > 1)
+        {
+            var last = _dragSlots[^1];
+            var prevGap = _dragSlots[^2].Advance - _dragSlots[^2].Height;
+            _dragSlots[^1] = last with { Advance = last.Height + prevGap };
+        }
+
+        var dragged = _dragSlots.First(s => s.Id == id);
+        _dragStartTop = dragged.Top;
+        _dragTargetTop = dragged.Top;
+        _dragGrabOffset = current.Y - dragged.Top;
+        _dragSlot = _dragSlots.IndexOf(dragged);
+
+        // 抬起视觉：置顶绘制 + 不透明底色，盖住从下面滑过的行
+        Panel.SetZIndex(host, DragLiftZIndex);
+        host.SetResourceReference(Border.BackgroundProperty, "Todo.ChromeBrush");
+        host.Effect = new DropShadowEffect
+        {
+            BlurRadius = 14,
+            ShadowDepth = 2,
+            Opacity = 0.4,
+            Color = Colors.Black,
+        };
+        CaptureMouse();
     }
 
-    private void ApplyDrop(Guid draggedId, int slot)
+    private void UpdateRowDrag(MouseEventArgs e)
+    {
+        if (!_dragActive || _dragHost is null || _dragItemId is null) return;
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            FinishRowDrag(true);
+            return;
+        }
+
+        var current = e.GetPosition(RowsPanel);
+        double offset = current.Y - _dragGrabOffset - _dragStartTop;
+        ((TranslateTransform)_dragHost.RenderTransform).Y = offset;
+
+        // 被拖行中心越过谁的中心，就插到谁后面
+        double center = _dragStartTop + offset + _dragRowHeight / 2;
+        int slot = 0;
+        foreach (var s in _dragSlots)
+        {
+            if (s.Id == _dragItemId) continue;
+            if (s.Top + s.Height / 2 < center) slot++;
+        }
+
+        slot = ClampDragSlot(slot);
+        if (slot == _dragSlot) return;
+        _dragSlot = slot;
+        LayoutDragPreview();
+    }
+
+    // 预览落点必须与 Core 的子区规则一致，否则松手会被夹走、视觉上跳位。
+    // slot 是"去掉被拖行之后"的插入位置，各子区在该下标空间里的范围与 Core 的物理下标范围一致。
+    private int ClampDragSlot(int slot)
+    {
+        if (_dragItemId is null || _dragSlots.Count <= 1) return 0;
+        var all = _state.Todos.Items;
+        var dragged = all.FirstOrDefault(i => i.Id == _dragItemId);
+        if (dragged is null) return slot;
+
+        int incompleteCount = all.Count(i => !i.IsCompleted);
+        int pinnedCount = all.Count(i => i.IsPinned && !i.IsCompleted);
+        int othersCount = _dragSlots.Count - 1;
+
+        int min = dragged.IsCompleted ? incompleteCount : dragged.IsPinned ? 0 : pinnedCount;
+        int max = dragged.IsCompleted ? othersCount
+            : dragged.IsPinned ? pinnedCount - 1
+            : incompleteCount - 1;
+        return Math.Clamp(slot, min, Math.Max(min, max));
+    }
+
+    private void LayoutDragPreview()
+    {
+        var others = _dragSlots.Where(s => s.Id != _dragItemId).ToList();
+        var order = new List<RowSlot>(_dragSlots.Count);
+        order.AddRange(others.Take(_dragSlot));
+        order.Add(_dragSlots.First(s => s.Id == _dragItemId));
+        order.AddRange(others.Skip(_dragSlot));
+
+        double top = _dragSlots[0].Top;
+        foreach (var s in order)
+        {
+            if (s.Id == _dragItemId) _dragTargetTop = top;
+            else AnimateRowShift(s, top - s.Top);
+            top += s.Advance;
+        }
+    }
+
+    private static void AnimateRowShift(RowSlot slot, double delta)
+    {
+        if (Math.Abs(delta) < 0.5)
+        {
+            slot.Shift.BeginAnimation(TranslateTransform.YProperty, null);
+            slot.Shift.Y = 0;
+            return;
+        }
+
+        slot.Shift.BeginAnimation(
+            TranslateTransform.YProperty,
+            new DoubleAnimation(delta, TimeSpan.FromMilliseconds(ReorderMilliseconds))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            });
+    }
+
+    // slot -> Core.Move 的物理下标。Move 是"先移除再插入"，所以目标下标是移除之后的；
+    // 落在被拖行原位置之后的要减 1，否则会多滑一位。
+    private int FullIndexForSlot(int slot)
     {
         var full = _state.Todos.Items;
-        if (full.Count == 0) return;
-        if (full.All(i => i.Id == draggedId)) return;
+        var ids = _dragSlots.Where(s => s.Id != _dragItemId).Select(s => s.Id).ToList();
+        if (ids.Count == 0) return 0;
 
-        var beforeIds = _rowHosts.Select(h => (Guid)h.Tag!).ToList();
-        int targetIndex;
-        if (beforeIds.Count == 0)
-        {
-            targetIndex = 0;
-        }
-        else if (slot <= 0)
-        {
-            targetIndex = FullIndex(full, beforeIds[0]);
-        }
-        else if (slot >= beforeIds.Count)
-        {
-            targetIndex = FullIndex(full, beforeIds[^1]) + 1;
-        }
-        else
-        {
-            targetIndex = FullIndex(full, beforeIds[slot]);
-        }
+        int before = slot <= 0 ? FullIndex(full, ids[0])
+            : slot >= ids.Count ? FullIndex(full, ids[^1]) + 1
+            : FullIndex(full, ids[slot]);
 
-        targetIndex = Math.Clamp(targetIndex, 0, full.Count);
-        _state.Todos.Move(draggedId, targetIndex);
-        Render();
-        Persist();
+        int draggedIndex = FullIndex(full, _dragItemId!.Value);
+        return before > draggedIndex ? before - 1 : before;
     }
 
     private static int FullIndex(IReadOnlyList<TodoItem> items, Guid id)
@@ -732,27 +847,125 @@ public partial class MainWindow : Window
         return 0;
     }
 
-    private void ShowInsertIndicator(int slot)
+    private void FinishRowDrag(bool commit)
     {
-        HideInsertIndicator();
-        var indicator = new Border
+        if (!_dragActive) return;
+
+        var id = _dragItemId;
+        int slot = _dragSlot;
+
+        _dragActive = false;
+        _dragArmed = false;
+        // _dragItemId 先留着：FullIndexForSlot / TryReorderRows / AnimateDragLanding 都要用，最后再清
+        if (IsMouseCaptured) ReleaseMouseCapture();
+
+        if (commit && id is not null)
         {
-            Height = 2,
-            Margin = new Thickness(6, 0, 6, 0),
-            CornerRadius = new CornerRadius(0),
-            IsHitTestVisible = false,
-        };
-        indicator.SetResourceReference(Border.BackgroundProperty, "Todo.SurfaceAccentBrush");
-        int index = Math.Clamp(slot, 0, RowsPanel.Children.Count);
-        RowsPanel.Children.Insert(index, indicator);
-        _dragIndicator = indicator;
+            var before = _rowHosts.Select(h => (Guid)h.Tag!).ToList();
+            _state.Todos.Move(id.Value, FullIndexForSlot(slot));
+            var after = _state.Todos.GetVisible(_state.Settings.CompletedRange).Select(i => i.Id).ToList();
+            if (!before.SequenceEqual(after)) Persist();
+        }
+
+        // 只重排行元素、不重建：重建 34 行要 200-300ms，正是松手卡顿的来源。
+        // 可见集合发生变化（例如某条已完成事项刚好滑出显示范围）时才回退到 Render() 全量重建。
+        if (id is not null && TryReorderRows(id.Value))
+        {
+            AnimateDragLanding(id.Value);
+        }
+        else
+        {
+            _dragSlots.Clear();
+            _dragHost = null;
+            Render();
+        }
+
+        _dragItemId = null;
+        _dragSlots.Clear();
+        _dragHost = null;
     }
 
-    private void HideInsertIndicator()
+    // 原地重排：复用已有行元素，只调整 RowsPanel 的 Children 次序。
+    // 复用要求可见集合与当前行完全一致，否则返回 false，交给 Render() 重建。
+    private bool TryReorderRows(Guid draggedId)
     {
-        if (_dragIndicator is null) return;
-        RowsPanel.Children.Remove(_dragIndicator);
-        _dragIndicator = null;
+        var visible = _state.Todos.GetVisible(_state.Settings.CompletedRange).Select(i => i.Id).ToList();
+        var current = _rowHosts.Select(h => (Guid)h.Tag!).ToList();
+        if (current.Count != visible.Count || current.Count == 0) return false;
+
+        var others = current.Where(x => x != draggedId).ToList();
+        var newOrder = new List<Guid>(current.Count);
+        newOrder.AddRange(others.Take(_dragSlot));
+        newOrder.Add(draggedId);
+        newOrder.AddRange(others.Skip(_dragSlot));
+        if (!newOrder.SequenceEqual(visible)) return false;
+
+        var byId = _rowHosts.ToDictionary(h => (Guid)h.Tag!, h => h);
+        if (!byId.TryGetValue(draggedId, out var draggedHost)) return false;
+
+        // 插到"新顺序里紧随其后的那一行"之前，避开草稿行等非行元素的下标干扰
+        RowsPanel.Children.Remove(draggedHost);
+        if (_dragSlot + 1 < newOrder.Count && byId.TryGetValue(newOrder[_dragSlot + 1], out var nextHost))
+        {
+            int at = RowsPanel.Children.IndexOf(nextHost);
+            if (at < 0)
+            {
+                RowsPanel.Children.Add(draggedHost);   // 复原，交给上层 Render() 重建
+                return false;
+            }
+            RowsPanel.Children.Insert(at, draggedHost);
+        }
+        else
+        {
+            RowsPanel.Children.Add(draggedHost);
+        }
+
+        _rowHosts.Clear();
+        foreach (var guid in newOrder) _rowHosts.Add(byId[guid]);
+        return true;
+    }
+
+    // 落位缓动：重排后布局已经落到目标槽位，把被拖行的位移补偿成"松手瞬间它在光标下的位置"，
+    // 再动画到 0，视觉上就是从光标滑进槽位；其余行的布局位置恰好等于动画终点，位移清零即可、
+    // 不会产生跳动（这一点在离屏验证里逐行比对过：预览位置与落定位置误差 0）。
+    private void AnimateDragLanding(Guid draggedId)
+    {
+        var dragged = _dragSlots.FirstOrDefault(s => s.Id == draggedId);
+        foreach (var s in _dragSlots)
+        {
+            if (s.Id == draggedId) continue;
+            s.Shift.BeginAnimation(TranslateTransform.YProperty, null);
+            s.Shift.Y = 0;
+        }
+
+        if (dragged is null) return;
+
+        double start = _dragStartTop + dragged.Shift.Y - _dragTargetTop;
+        var shift = dragged.Shift;
+        shift.BeginAnimation(TranslateTransform.YProperty, null);
+        shift.Y = start;
+
+        // 落位后要撤销"抬起"的视觉（置顶绘制 / 不透明底色 / 投影）。原地重排不再重建行，
+        // 不主动清就会留在行上；因此由动画结束事件负责收尾（无动画时立即收尾）。
+        if (Math.Abs(start) < 0.5)
+        {
+            ClearDragLift(dragged.Host);
+            return;
+        }
+
+        var landing = new DoubleAnimation(0, TimeSpan.FromMilliseconds(ReorderMilliseconds))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        };
+        landing.Completed += (_, _) => ClearDragLift(dragged.Host);
+        shift.BeginAnimation(TranslateTransform.YProperty, landing);
+    }
+
+    private static void ClearDragLift(FrameworkElement host)
+    {
+        host.ClearValue(Panel.ZIndexProperty);
+        host.ClearValue(Border.BackgroundProperty);
+        host.ClearValue(UIElement.EffectProperty);
     }
 
     // ---------- 停靠 ----------
@@ -989,10 +1202,16 @@ public partial class MainWindow : Window
         }
     }
 
-    // 鼠标抬起即解除拖动武装：避免双击进入编辑后 _dragArmed 残留、随后误触发拖动
+    // 鼠标抬起：解除拖动武装，并按需提交排序
     private void MainWindow_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         _dragArmed = false;
+        if (_dragActive)
+        {
+            FinishRowDrag(true);
+            e.Handled = true;
+            return;
+        }
         if (!_resizeActive) return;
 
         _resizeActive = false;
@@ -1051,6 +1270,19 @@ public partial class MainWindow : Window
             Width = width;
             Height = height;
             e.Handled = true;
+            return;
+        }
+
+        if (_dragActive)
+        {
+            UpdateRowDrag(e);
+            e.Handled = true;
+            return;
+        }
+
+        if (_dragArmed)
+        {
+            UpdateRowDragArming(e);
             return;
         }
 

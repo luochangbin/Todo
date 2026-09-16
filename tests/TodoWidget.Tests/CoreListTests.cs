@@ -195,6 +195,38 @@ public static class CoreListTests
             list.Move(IdOf(list, "C"), -5);
             Test.Eq(string.Join(",", list.Items.Select(i => i.Text)), "B,A,C");
         }),
+        ("ClampMoveTarget 与 Move 落点完全一致", () =>
+        {
+            var clock = new FakeClock(Base);
+            var list = new TodoList(clock);
+            list.Create("A");
+            list.Create("B");
+            list.Create("C");
+            list.Create("D");
+            list.Create("E");
+            list.SetCompleted(IdOf(list, "A"), true);
+            list.SetCompleted(IdOf(list, "B"), true);
+            list.Pin(IdOf(list, "E"));
+
+            int count = list.Items.Count;
+            foreach (var item in list.Items.ToList())
+            {
+                for (int target = -3; target <= count + 3; target++)
+                {
+                    // 拖动预览用的就是 ClampMoveTarget，落点必须与它一致，否则松手会跳位
+                    var probe = new TodoList(list.Items, clock);
+                    int expected = probe.ClampMoveTarget(item.Id, target);
+                    probe.Move(item.Id, target);
+
+                    int actual = -1;
+                    for (int i = 0; i < probe.Items.Count; i++)
+                    {
+                        if (probe.Items[i].Id == item.Id) { actual = i; break; }
+                    }
+                    Test.Eq(actual, expected, $"{item.Text} 拖到 {target}");
+                }
+            }
+        }),
         ("Delete 移除事项并规范化同组 Order", () =>
         {
             var clock = new FakeClock(Base);

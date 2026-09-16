@@ -141,11 +141,7 @@
             <!-- 事项列表 -->
             <ScrollViewer x:Name="ListScroll" Grid.Row="3" Margin="0,6,0,8"
                           VerticalScrollBarVisibility="Auto">
-                <StackPanel x:Name="RowsPanel" AllowDrop="True"
-                            PreviewDragOver="RowsPanel_PreviewDragOver"
-                            DragLeave="RowsPanel_DragLeave"
-                            Drop="RowsPanel_Drop"
-                            Background="Transparent"/>
+                <StackPanel x:Name="RowsPanel" Background="Transparent"/>
             </ScrollViewer>
 
             <!-- 删除确认气泡（Popconfirm）：锚定到被点击的删除图标 -->
