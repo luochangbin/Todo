@@ -233,14 +233,14 @@
         </Style>
 
         <!-- 行内编辑/新增（事项行与草稿行共用）：文字起点与事项行一致——透明底、无边框、无内边距，
-             只用行背景 + 一条 1px 强调色细线表示"正在输入"，避免切换编辑态时文字跳动。
+             只用行背景 + 一条 1px 灰色细线表示"正在输入"，避免切换编辑态时文字跳动。
              纯空框不可见，因此保留占位提示（Tag 提供）。 -->
         <Style x:Key="Todo.RowEditor" TargetType="{x:Type TextBox}">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{DynamicResource Todo.TextFgBrush}"/>
             <Setter Property="CaretBrush" Value="{DynamicResource Todo.TextFgBrush}"/>
             <Setter Property="SelectionBrush" Value="{DynamicResource Todo.AccentBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource Todo.AccentBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Todo.SeparatorBrush}"/>
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="FontSize" Value="13"/>
