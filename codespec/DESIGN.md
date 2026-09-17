@@ -91,7 +91,7 @@ Repository 通过 `SemaphoreSlim` 串行化保存，避免排序保存和勾选�
 
 ### Design: 托盘图标与随系统启动
 
-主窗口 `ShowInTaskbar=False`，任务栏与 Alt+Tab 都不出现，因此通知区域（托盘）是唯一的可见入口：`TrayIcon` 用 WinForms `NotifyIcon`（`<UseWindowsForms>true</UseWindowsForms>`，图标取自 exe 自身的 `app.ico`），双击切换显示/隐藏，右键菜单（WinForms `ContextMenuStrip`，保持系统原生外观）提供“显示 / 隐藏”与“退出”。引入 WinForms 会带来 `System.Windows.Forms`/`System.Drawing` 的隐式 using，与 WPF 的 `Application`/`Color`/`Button` 同名冲突，因此 csproj 里用 `<Using Remove="..."/>` 移除这两个隐式 using，只在 `TrayIcon.cs` 内显式别名引用。
+主窗口 `ShowInTaskbar=False`，任务栏与 Alt+Tab 都不出现，因此通知区域（托盘）是唯一的可见入口：`TrayIcon` 用 WinForms `NotifyIcon`（`<UseWindowsForms/>`，图标取自内嵌的 `todo.ico` 并按系统小图标尺寸挑档），双击切换显示/隐藏，右键菜单（WinForms `ContextMenuStrip`，保持系统原生外观）提供“显示 / 隐藏”与“退出”。托盘的切换按**可见性**判定（可见→隐藏、隐藏→显示），不能用快捷键那套自适应规则：点托盘（右键或双击）本身会让主窗口失去前台，自适应规则会把“隐藏”永远判成“唤到最前”，表现为“只能显示、不能隐藏”。引入 WinForms 会带来 `System.Windows.Forms`/`System.Drawing` 的隐式 using，与 WPF 的 `Application`/`Color`/`Button` 同名冲突，因此 csproj 里用 `<Using Remove="..."/>` 移除这两个隐式 using，只在 `TrayIcon.cs` 内显式别名引用。
 
 随系统启动写当前用户的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`（无需管理员权限），值名为 `TodoWidget`、内容为带引号的 `Environment.ProcessPath`。开启时机由持久化标记 `AppSettings.AutoStartConfigured` 控制：为 `false`（首次运行，或旧状态文件缺少该字段）时登记启动项并立刻把标记置为 `true` 落盘；这样只登记一次，用户在系统设置里关掉启动项后不会被应用反复打开。从托盘菜单“退出”会先删除启动项，再走正常的收尾保存与退出流程（`FinalCloseAsync` 里会 `Dispose` 掉托盘图标与快捷键）。
 

@@ -7,16 +7,18 @@ namespace TodoWidget.Desktop;
 /// <summary>
 /// 托盘图标（通知区域）。主窗口本身不占任务栏，托盘提供唯一的可见入口：
 /// 双击切换显示/隐藏，右键菜单可显示/隐藏或退出。
+/// 传入的是"按可见性切换"而非快捷键那套自适应规则——点托盘会让主窗口失去前台，
+/// 自适应规则会把"隐藏"判成"唤到最前"。
 /// </summary>
 public sealed class TrayIcon : IDisposable
 {
     private readonly WinForms.NotifyIcon _icon;
     private bool _disposed;
 
-    public TrayIcon(Action onToggle, Action onExit)
+    public TrayIcon(Action onToggleVisibility, Action onExit)
     {
         var menu = new WinForms.ContextMenuStrip { ShowImageMargin = false };
-        menu.Items.Add("显示 / 隐藏", null, (_, _) => onToggle());
+        menu.Items.Add("显示 / 隐藏", null, (_, _) => onToggleVisibility());
         menu.Items.Add(new WinForms.ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => onExit());
 
@@ -27,7 +29,7 @@ public sealed class TrayIcon : IDisposable
             Visible = true,
             ContextMenuStrip = menu,
         };
-        _icon.DoubleClick += (_, _) => onToggle();
+        _icon.DoubleClick += (_, _) => onToggleVisibility();
     }
 
     /// <summary>

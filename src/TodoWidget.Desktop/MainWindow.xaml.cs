@@ -82,7 +82,7 @@ public partial class MainWindow : Window
         MouseLeave += OnWindowMouseLeave;
         Closing += MainWindow_Closing;
 
-        _tray = new TrayIcon(OnToggleHotkey, ExitFromTray);
+        _tray = new TrayIcon(ToggleVisibilityFromTray, ExitFromTray);
     }
 
     private TrayIcon? _tray;
@@ -1042,27 +1042,49 @@ public partial class MainWindow : Window
         }
     }
 
+    // 唤出并激活：快捷键、托盘的恢复路径共用
+    private void ShowAndActivate()
+    {
+        RestoreHiddenOrNormal();
+        _hotkeyHidden = false;
+        Show();
+        Activate();
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+    }
+
+    // 收起：快捷键与托盘共用，用 Hide() 而不是系统最小化（无边框透明窗口最小化会留裁切横条）
+    private bool HideWindow()
+    {
+        // 设置窗口或删除确认气泡是独立顶层窗口：此时收起主窗口会把它们悬空留下
+        if (_modalOpen || DeleteConfirm.IsOpen) return false;
+        _hotkeyHidden = true;
+        Hide();
+        return true;
+    }
+
+    // 托盘的显示/隐藏按可见性切换：点托盘（右键或双击）本身会让主窗口失去前台，
+    // 若沿用快捷键那套"不在前台先唤到最前"的自适应规则，"隐藏"会永远变成"唤到最前"。
+    private void ToggleVisibilityFromTray()
+    {
+        if (IsVisible)
+        {
+            HideWindow();
+            return;
+        }
+        ShowAndActivate();
+    }
+
     // 单一快捷键：隐藏时唤出并激活；显示中但不在前台时先唤到最前；已是当前窗口才隐藏。
-    // 收起用 Hide() 而不是 WindowState=Minimized：本窗口是无边框 + AllowsTransparency + ShowInTaskbar=False，
-    // 走系统最小化不会进任务栏，会在桌面留下一条裁切横条。_hotkeyHidden 与停靠状态相互独立。
     private void OnToggleHotkey()
     {
         bool hidden = _dock.IsCollapsed || _hotkeyHidden;
         if (AppHotkeyRules.ShouldRaiseOnHotkey(hidden, IsActive, _modalOpen, Topmost))
         {
-            RestoreHiddenOrNormal();
-            _hotkeyHidden = false;
-            Show();
-            Activate();
-            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            ShowAndActivate();
             return;
         }
 
-        // 设置窗口或删除确认气泡是独立顶层窗口：此时收起主窗口会把它们悬空留下，直接忽略这次按键
-        if (_modalOpen || DeleteConfirm.IsOpen) return;
-
-        _hotkeyHidden = true;
-        Hide();
+        HideWindow();
     }
 
     // ---------- 快捷键注册 ----------
