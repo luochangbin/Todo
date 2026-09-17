@@ -2,8 +2,11 @@
 
 Windows 桌面待办组件：无边框小窗口，可以钉在桌面一角、贴边自动隐藏、拖边缘改大小，不占任务栏，靠托盘图标和全局快捷键操作。
 
-<p align="center">
-  <img src="docs/screenshot.png" width="720" alt="TodoWidget 界面截图">
+<p align="left">
+  <img src="docs/screenshot.png" width="480" alt="TodoWidget 界面截图">
+</p>
+<p align="left">
+  <img src="docs/演示.gif" width="480" alt="TodoWidget 使用演示">
 </p>
 
 ## 运行
