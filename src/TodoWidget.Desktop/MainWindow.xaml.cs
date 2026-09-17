@@ -41,6 +41,8 @@ public partial class MainWindow : Window
     private bool _draftActive;
     private TextBox? _draftBox;
     private bool _modalOpen;
+    // 快捷键是否把窗口收起了（Hide）。与停靠的边缘隐藏互不影响：恢复时两者各自复位。
+    private bool _hotkeyHidden;
     private bool _resizeActive;
     private bool _resizeLeft;
     private bool _resizeRight;
@@ -1040,19 +1042,27 @@ public partial class MainWindow : Window
         }
     }
 
-    // 单一快捷键：隐藏/最小化时唤出并激活，显示中但不在前台时先唤到最前，已是当前窗口才最小化。
+    // 单一快捷键：隐藏时唤出并激活；显示中但不在前台时先唤到最前；已是当前窗口才隐藏。
+    // 收起用 Hide() 而不是 WindowState=Minimized：本窗口是无边框 + AllowsTransparency + ShowInTaskbar=False，
+    // 走系统最小化不会进任务栏，会在桌面留下一条裁切横条。_hotkeyHidden 与停靠状态相互独立。
     private void OnToggleHotkey()
     {
-        bool hidden = _dock.IsCollapsed || WindowState == WindowState.Minimized;
+        bool hidden = _dock.IsCollapsed || _hotkeyHidden;
         if (AppHotkeyRules.ShouldRaiseOnHotkey(hidden, IsActive, _modalOpen, Topmost))
         {
             RestoreHiddenOrNormal();
+            _hotkeyHidden = false;
             Show();
             Activate();
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
             return;
         }
-        WindowState = WindowState.Minimized;
+
+        // 设置窗口或删除确认气泡是独立顶层窗口：此时收起主窗口会把它们悬空留下，直接忽略这次按键
+        if (_modalOpen || DeleteConfirm.IsOpen) return;
+
+        _hotkeyHidden = true;
+        Hide();
     }
 
     // ---------- 快捷键注册 ----------

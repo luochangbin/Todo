@@ -164,7 +164,7 @@
                              AutomationProperties.AutomationId="RangeAll"/>
             </StackPanel>
 
-            <TextBlock Grid.Row="9" Text="全局快捷键（同一个键：隐藏/最小化时唤出，显示时最小化；留空禁用）"
+            <TextBlock Grid.Row="9" Text="全局快捷键（同一个键：隐藏时唤出，显示时隐藏；留空禁用）"
                        Margin="0,14,0,0" TextWrapping="Wrap"
                        Foreground="{DynamicResource Todo.MutedBrush}" FontSize="11.5"/>
             <TextBox x:Name="ToggleHotkeyInput" Grid.Row="10" Height="30" Margin="0,4,0,0"
