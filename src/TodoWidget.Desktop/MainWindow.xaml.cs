@@ -306,17 +306,20 @@ public partial class MainWindow : Window
 
         if (_editingId == item.Id)
         {
+            // 行内编辑：文字起点与普通行一致，只靠行背景 + 细强调线表示"正在编辑"
+            host.SetResourceReference(Border.BackgroundProperty, "Todo.HoverBrush");
             var editor = new TextBox
             {
                 Text = item.Text,
+                Style = (Style)Application.Current.Resources["Todo.RowEditor"],
                 TextWrapping = TextWrapping.Wrap,
                 AcceptsReturn = true,
-                MinHeight = 26,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, 3, 6, 3),
+                MinHeight = 22,
+                VerticalAlignment = VerticalAlignment.Center,
+                // TextBox 内部文字有约 2px 内缩，左移 2px 让文字起点与普通行严格对齐
+                Margin = new Thickness(-2, 0, 6, 0),
             };
             AutomationProperties.SetAutomationId(editor, "RowEditInput");
-            editor.SetResourceReference(Control.ForegroundProperty, "Todo.TextFgBrush");
             Grid.SetColumn(editor, 1);
             row.Children.Add(editor);
             _activeEditor = editor;
@@ -548,7 +551,8 @@ public partial class MainWindow : Window
         if (_activeEditor is not null)
         {
             _activeEditor.Focus();
-            _activeEditor.SelectAll();
+            // 光标落在末尾而不是全选：改已有待办时很少是要整体覆盖，全选容易误删
+            _activeEditor.CaretIndex = _activeEditor.Text.Length;
         }
     }
 
@@ -609,6 +613,7 @@ public partial class MainWindow : Window
             MinHeight = 34,
             Margin = new Thickness(6, 1, 6, 1),
         };
+        host.SetResourceReference(Border.BackgroundProperty, "Todo.HoverBrush");
         AutomationProperties.SetAutomationId(host, "DraftRow");
 
         var row = new Grid { MinHeight = 34 };
@@ -618,13 +623,16 @@ public partial class MainWindow : Window
 
         var box = new TextBox
         {
-            MinHeight = 26,
+            // 行内样式下空框不可见，靠占位提示说明这里能输入
+            Tag = "添加待办…",
+            Style = (Style)Application.Current.Resources["Todo.RowEditor"],
+            MinHeight = 22,
             TextWrapping = TextWrapping.Wrap,
             AcceptsReturn = true,
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 3, 6, 3),
+            VerticalAlignment = VerticalAlignment.Center,
+            // 同上：抵消 TextBox 内部的 2px 文字内缩
+            Margin = new Thickness(-2, 0, 6, 0),
         };
-        box.SetResourceReference(Control.ForegroundProperty, "Todo.TextFgBrush");
         AutomationProperties.SetAutomationId(box, "DraftInput");
         box.PreviewKeyDown += DraftBox_PreviewKeyDown;
         box.LostKeyboardFocus += (_, _) => { if (_draftActive) CommitDraft(); };
