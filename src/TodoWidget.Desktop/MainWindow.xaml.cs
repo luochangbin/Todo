@@ -68,6 +68,9 @@ public partial class MainWindow : Window
         _hotkeys.RegisterHandler(OnToggleHotkey);
 
         _dock = new DockManager(this, OnPlacementChanged);
+        // 删除确认气泡/设置窗口是独立顶层窗口：光标停在其上时主窗口 IsMouseOver 为假，
+        // 自动收回会把气泡一起带走（气泡被 WPF 销毁，确认操作静默失效）。
+        _dock.CollapseSuppressed = () => DeleteConfirm.IsOpen || _modalOpen;
         MouseEnter += OnWindowMouseEnter;
         LostMouseCapture += (_, _) =>
         {
@@ -1231,6 +1234,7 @@ public partial class MainWindow : Window
 
         var (left, right, top, bottom) = HitResizeBands(e.GetPosition(this));
         if (!left && !right && !top && !bottom) return;
+        if (ShouldDeferToContent(e.OriginalSource)) return;
 
         _resizeLeft = left;
         _resizeRight = right;
@@ -1291,6 +1295,22 @@ public partial class MainWindow : Window
         {
             UpdateResizeCursor(e.GetPosition(this));
         }
+    }
+
+    // 缩放感应带只吃"空白区域"的点击：点击落在事项行（复选框/文本/图标/编辑框）或删除确认气泡上时，
+    // 必须让内容正常响应。否则贴着窗口边缘的那一行会被感应带吞掉点击——曾导致"最后一条删不掉"：
+    // 点击落进底部感应带 → e.Handled=true 挡住内容、并抢走鼠标捕获 → 确认气泡被 WPF 关闭 → 按钮从未收到点击。
+    private bool ShouldDeferToContent(object? original)
+    {
+        if (DeleteConfirm.IsOpen) return true;
+        var d = original as DependencyObject;
+        while (d is not null)
+        {
+            if (d is CheckBox or TextBox or Button) return true;
+            if (d is FrameworkElement fe && fe.Tag is Guid) return true;   // 事项行宿主（Tag = 事项 Id）
+            d = VisualTreeHelper.GetParent(d);
+        }
+        return false;
     }
 
     private (bool Left, bool Right, bool Top, bool Bottom) HitResizeBands(Point position)

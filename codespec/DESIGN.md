@@ -132,9 +132,11 @@ Repository 通过 `SemaphoreSlim` 串行化保存，避免排序保存和勾选�
 
 完全移出屏幕后窗口收不到任何鼠标事件，因此 `Collapsed` 期间由 `DockManager` 启动一个 160ms 的 `DispatcherTimer`，用 `GetCursorPos` 取光标位置，交给 `DockCalculator.IsRestoreTrigger` 判定：光标需同时满足「贴住停靠边缘 ±4px」与「落在原停靠位置的范围内」，命中则滑出显示并停止该计时器。
 
-`ShownFromDock` 期间窗口的 `MouseLeave` 会调用 `DockManager.ScheduleCollapse()`，启动一个 420ms 的一次性计时器；触发时若 `_window.IsMouseOver` 仍为假（鼠标没回来）就回到 `Collapsed`。以下情况不收回：左键按下期间（拖动/缩放/排序）、设置窗口打开（`_modalOpen`）、删除确认气泡打开（`DeleteConfirm.IsOpen`）——否则鼠标移到这些浮层上会误收窗口。把窗口拖离边缘释放时 `OnTitleDragEnded` 会把 `_edge` 置回 `None`，即解除停靠。窗口始终是同一个 `MainWindow` 实例。
+`ShownFromDock` 期间窗口的 `MouseLeave` 会调用 `DockManager.ScheduleCollapse()`，启动一个 420ms 的一次性计时器；触发时若 `_window.IsMouseOver` 仍为假（鼠标没回来）就回到 `Collapsed`。不收回的情况分两层：左键按下期间（拖动/缩放/排序）在 `MainWindow.OnWindowMouseLeave` 入口拦截；设置窗口打开（`_modalOpen`）与删除确认气泡打开（`DeleteConfirm.IsOpen`）则下沉到 `DockManager.CollapseAfterLeave()` 内部判断（`CollapseSuppressed`）——它们都是**独立顶层窗口**，光标停在上面时主窗口 `IsMouseOver` 为假，而计时器可能早在浮层打开之前就被武装（光标移向行内图标时越过窗口边界）。把窗口拖离边缘释放时 `OnTitleDragEnded` 会把 `_edge` 置回 `None`，即解除停靠。窗口始终是同一个 `MainWindow` 实例。
 
 **拖动改大小**：无边框 + `AllowsTransparency` 的窗口无法依赖系统非客户区缩放（既没有 WS_THICKFRAME，`ResizeMode` 也不可靠），因此自实现——窗口级 `PreviewMouseLeftButtonDown` 判断光标是否落在 `ResizeBand`(6px) 感应带内，命中则记录起始光标屏幕坐标与起始矩形、`CaptureMouse()` 并 `e.Handled=true`（挡掉行拖动）；`PreviewMouseMove` 按位移算出新矩形并按 `MinWidth/MinHeight`(220x160) 夹取；`PreviewMouseLeftButtonUp` 释放捕获并调用 `DockManager.UpdateSizeFromWindow()` 落盘。未拖动时 `PreviewMouseMove` 只根据感应带更新缩放光标。隐藏状态下不参与缩放与光标反馈。屏幕坐标换算用 `PointToScreen` 除以窗口 DPI 缩放，与停靠几何统一为 DIP。
+
+**感应带必须让位于内容**（`ShouldDeferToContent`）：命中感应带后，若 `e.OriginalSource` 向上能走到事项行宿主（`Tag` 是 `Guid`）或复选框/输入框/按钮，或删除确认气泡正开着，就直接返回、不进入缩放。原因是 `e.Handled=true` 会同时做两件破坏性的事——吞掉这一击、并 `CaptureMouse()` 抢走鼠标捕获，而后者会让 `StaysOpen=False` 的确认气泡被 WPF 关闭。曾真实发生：列表最后一条（或出现滚动条时）的删除图标贴近窗口底边，点「删除」时这一击落进底部感应带，气泡被连坐关闭、按钮从未收到点击，表现为**删不掉且不报错**，把窗口拉长让该行离开底边就恢复正常（离屏无法复现，最终靠临时日志打出 `命中缩放带 B=True` 定位）。代价是：贴着边缘的行不再能用那条边缩放，缩放仍可从左右侧、顶部与列表空白处进行。
 
 启动恢复时验证保存坐标是否仍与任一工作区相交；显示器拔出或坐标越界时回退到主显示器可见区域。窗口位置、停靠方向和锚点随状态保存。
 

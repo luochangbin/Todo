@@ -159,11 +159,19 @@ public sealed class DockManager : IDisposable
         if (!_restoreWatcher.IsEnabled) _restoreWatcher.Start();
     }
 
+    /// <summary>
+    /// 自动收回前询问宿主是否应抑制（删除确认气泡、设置窗口打开时）。
+    /// 气泡是独立顶层窗口，光标停在气泡上时 <see cref="Window.IsMouseOver"/> 为假，
+    /// 若不抑制就会把窗口连同气泡一起收回——WPF 随后销毁气泡，用户点"删除"落空，且没有任何报错。
+    /// </summary>
+    public Func<bool>? CollapseSuppressed { get; set; }
+
     private void CollapseAfterLeave()
     {
         _collapseWatcher.Stop();
         if (_collapsed || _edge == DockEdge.None) return;
         if (_window.IsMouseOver) return;   // 鼠标又回来了
+        if (CollapseSuppressed?.Invoke() == true) return;   // 有浮层在用，不能收回
         ApplyCollapsed();
         Persist(_fullRect, _edge, _anchor);
     }
